@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# Функция для отображения справки
+display_help() {
+    echo "Использование: $(basename "$0") [ОПЦИИ]"
+    echo "Опции:"
+    echo " -u, —users     Отобразить список пользователей и их домашние каталоги"
+    echo " -p, —processes Отобразить список запущенных процессов, отсортированных по PID"
+    echo " -h, —help      Отобразить это справочное сообщение и выйти"
+    echo " -l ПУТЬ, —log ПУТЬ  Перенаправить вывод в файл, указанный ПУТЕМ"
+    echo " -e ПУТЬ, —errors ПУТЬ  Перенаправить ошибки из stderr в файл, указанный ПУТЕМ"
+}
+
+# Функция для отображения списка пользователей и их домашних каталогов
+display_users() {
+    # Получаем список пользователей, фильтруем только обычных пользователей, сортируем по алфавиту и выводим
+    getent passwd | awk -F: '$3 >= 1000' | sort -t: -k1,1 | awk -F: '{print "Пользователь:", $1, "Домашний каталог:", $6}'
+}
+
+# Функция для отображения списка запущенных процессов
+display_processes() {
+    # Выводим список запущенных процессов, отображая их PID и команду, сортируя по PID
+    ps -eo pid,cmd --sort=pid
+}
+
+# Функция для перенаправления вывода в файл
+redirect_output() {
+    local path=$1
+    if ! touch "$path" 2>/dev/null; then # Отправляем в никуда
+        echo "Ошибка: Невозможно записать в $path" >&2
+        exit 1
+    fi
+    exec > "$path"
+}
+
+# Функция для перенаправления ошибок из stderr в файл
+redirect_errors() {
+    local path=$1
+    if ! touch "$path" 2>/dev/null; then
+        echo "Ошибка: Невозможно записать ошибки в $path" >&2
+        exit 1
+    fi
+    exec 2> "$path"
+}
+
+# Обработка опций командной строки
+while getopts ":uphl:e:-:" opt; do # Cтрока опций, где каждая буква представляет опцию, а после двоеточия указывается, ожидается ли у этой опции аргумент или нет
+    case $opt in
+        u|users)
+            display_users
+            ;;
+        p|processes)
+            display_processes
+            ;;
+        h|help)
+            display_help
+            exit 0
+            ;;
+        l|log)
+            redirect_output "$OPTARG"
+            ;;
+        e|errors)
+            redirect_errors "$OPTARG"
+            ;;
+        -)
+            case "${OPTARG}" in
+                users)
+                    display_users
+                    ;;
+                processes)
+                    display_processes
+                    ;;
+                help)
+                    display_help
+                    exit 0
+                    ;;
+                log)
+                    redirect_output "${!OPTIND}"
+                    OPTIND=$((OPTIND + 1))
+                    ;;
+                errors)
+                    redirect_errors "${!OPTIND}"
+                    OPTIND=$((OPTIND + 1))
+                    ;;
+                *)
+                    echo "Ошибка: Недопустимая опция —$OPTARG" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        *)
+            echo "Ошибка: Недопустимая опция -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Если не были переданы аргументы, выводим справку
+if [[ $# -eq 0 ]]; then
+    display_help
+fi
